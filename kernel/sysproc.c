@@ -107,3 +107,25 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// MODIFICACION (scheduler): manejador de la syscall setpriority(pid, prioridad).
+// Recibe dos argumentos enteros desde espacio de usuario y delega en la
+// funcion setpriority() del kernel (proc.c). Devuelve la prioridad anterior o -1.
+uint64
+sys_setpriority(void)
+{
+  int pid;
+  int priority;
+
+  argint(0, &pid);       // primer argumento: pid del proceso
+  argint(1, &priority);  // segundo argumento: nueva prioridad
+  return setpriority(pid, priority);
+}
+
+// MODIFICACION (memoria): manejador de la syscall freemem().
+// Devuelve la cantidad de bytes de memoria fisica libre en el sistema.
+uint64
+sys_freemem(void)
+{
+  return freemem();
+}

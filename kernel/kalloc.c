@@ -21,12 +21,19 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
+  // MODIFICACION (memoria): contador de paginas fisicas libres.
+  // Nos permite instrumentar el asignador y medir cuantitativamente el uso
+  // de memoria del sistema (ver la syscall freemem()).
+  uint64 free_pages;
 } kmem;
 
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  // MODIFICACION (memoria): iniciamos el contador en 0; freerange() -> kfree()
+  // lo ira incrementando por cada pagina que se agregue a la lista libre.
+  kmem.free_pages = 0;
   freerange(end, (void *)PHYSTOP);
 }
 
@@ -59,6 +66,7 @@ kfree(void *pa)
   acquire(&kmem.lock);
   r->next = kmem.freelist;
   kmem.freelist = r;
+  kmem.free_pages++; // MODIFICACION (memoria): una pagina mas disponible
   release(&kmem.lock);
 }
 
@@ -72,11 +80,31 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if (r)
+  if (r) {
     kmem.freelist = r->next;
+    kmem.free_pages--; // MODIFICACION (memoria): una pagina menos disponible
+  }
   release(&kmem.lock);
 
   if (r)
     memset((char *)r, 5, PGSIZE); // fill with junk
   return (void *)r;
+}
+
+// ============================================================================
+// MODIFICACION (memoria): freemem() devuelve la cantidad de BYTES de memoria
+// fisica libre (paginas libres * tamano de pagina). Es la base de la syscall
+// freemem(), que usamos para comparar el consumo de memoria antes y despues
+// de ejecutar programas.
+// ============================================================================
+uint64
+freemem(void)
+{
+  uint64 pages;
+
+  acquire(&kmem.lock);
+  pages = kmem.free_pages;
+  release(&kmem.lock);
+
+  return pages * PGSIZE;
 }

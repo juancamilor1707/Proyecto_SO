@@ -25,6 +25,9 @@ char *sys_sbrk(int, int);
 int pause(int);
 int uptime(void);
 int sync(void);
+// MODIFICACION: prototipos de las nuevas syscalls del proyecto.
+int setpriority(int pid, int priority); // scheduler: fija prioridad de un proceso
+int freemem(void);                       // memoria: bytes de memoria libre
 
 // ulib.c
 int stat(const char *, struct stat *);

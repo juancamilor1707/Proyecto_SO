@@ -21,3 +21,6 @@
 #define SYS_mkdir  20
 #define SYS_close  21
 #define SYS_sync   22
+// MODIFICACION: nuevas llamadas al sistema para el proyecto.
+#define SYS_setpriority 23 // fija la prioridad de un proceso (scheduler)
+#define SYS_freemem     24 // devuelve los bytes de memoria libre (memoria)

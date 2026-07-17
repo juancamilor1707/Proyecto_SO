@@ -12,3 +12,7 @@
 #define FSSIZE      2000              // size of file system in blocks
 #define MAXPATH     128               // maximum file path name
 #define USERSTACK   1                 // user stack pages
+
+// MODIFICACION (scheduler): parametros de la planificacion por prioridades.
+#define MAXPRIO     20                // prioridad maxima permitida
+#define DEFAULT_PRIO 10               // prioridad por defecto de un proceso nuevo
