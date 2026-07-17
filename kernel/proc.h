@@ -92,6 +92,11 @@ struct proc {
   // wait_lock must be held when using this:
   struct proc *parent; // Parent process
 
+  // MODIFICACION (scheduler): prioridad del proceso.
+  // Rango 0..MAXPRIO. Un valor MAYOR = MAYOR prioridad.
+  // El planificador siempre elige el proceso RUNNABLE con mayor prioridad.
+  int priority;                // Prioridad de planificacion del proceso
+
   // these are private to the process, so p->lock need not be held.
   uint64 kstack;               // Virtual address of kernel stack
   uint64 sz;                   // Size of process memory (bytes)

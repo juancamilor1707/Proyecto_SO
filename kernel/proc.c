@@ -125,6 +125,10 @@ found:
   p->pid = allocpid();
   p->state = USED;
 
+  // MODIFICACION (scheduler): todo proceso nuevo arranca con la prioridad
+  // por defecto. El usuario puede cambiarla luego con la syscall setpriority().
+  p->priority = DEFAULT_PRIO;
+
   // Allocate a trapframe page.
   if ((p->trapframe = (struct trapframe *)kalloc()) == 0) {
     freeproc(p);
@@ -421,6 +425,25 @@ kwait(uint64 addr)
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
+//
+// ============================================================================
+// MODIFICACION (scheduler): PLANIFICACION POR PRIORIDADES (Priority Scheduling)
+// ----------------------------------------------------------------------------
+// El xv6 original usa Round-Robin: recorre la tabla de procesos y ejecuta el
+// primer proceso RUNNABLE que encuentra, dandole a todos el mismo trato.
+//
+// Aqui lo cambiamos por un planificador por prioridades (no expropiativo entre
+// rondas): en cada iteracion recorremos TODA la tabla de procesos y elegimos
+// el proceso RUNNABLE con el MAYOR valor de p->priority. Ese proceso es el que
+// se ejecuta. Si hay empate, gana el primero encontrado (orden de la tabla),
+// lo que preserva un comportamiento tipo Round-Robin entre procesos de igual
+// prioridad.
+//
+// Nota sobre bloqueos: recorremos la tabla siempre en orden ascendente y
+// mantenemos tomado el lock del mejor candidato (highp) mientras seguimos
+// buscando. Como todos los CPUs adquieren los locks en el mismo orden
+// (ascendente por indice), no se produce interbloqueo.
+// ============================================================================
 void
 scheduler(void)
 {
@@ -437,29 +460,72 @@ scheduler(void)
     intr_on();
     intr_off();
 
-    int found = 0;
+    // MODIFICACION: buscamos el proceso RUNNABLE con la prioridad mas alta.
+    // 'highp' apunta al mejor candidato encontrado hasta ahora y mantenemos
+    // su lock tomado para poder ejecutarlo de forma segura al terminar.
+    struct proc *highp = 0;
     for (p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if (p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
+        if (highp == 0) {
+          // Primer candidato: lo guardamos y CONSERVAMOS su lock.
+          highp = p;
+          continue;
+        } else if (p->priority > highp->priority) {
+          // Encontramos uno con mayor prioridad: soltamos el anterior
+          // candidato y nos quedamos con este (conservando su lock).
+          release(&highp->lock);
+          highp = p;
+          continue;
+        }
       }
+      // No es candidato (o no supera al actual): soltamos su lock.
       release(&p->lock);
     }
-    if (found == 0) {
-      // nothing to run; stop running on this core until an interrupt.
+
+    if (highp) {
+      // Ejecutamos el proceso de mayor prioridad. Llegamos aqui con
+      // highp->lock ya tomado.
+      highp->state = RUNNING;
+      c->proc = highp;
+      swtch(&c->context, &highp->context);
+
+      // El proceso ya devolvio el control al planificador.
+      c->proc = 0;
+      release(&highp->lock);
+    } else {
+      // No hay nada que ejecutar; detenemos este core hasta una interrupcion.
       asm volatile("wfi");
     }
   }
+}
+
+// ============================================================================
+// MODIFICACION (scheduler): syscall auxiliar setpriority().
+// Cambia la prioridad del proceso identificado por 'pid'. Devuelve la prioridad
+// anterior en caso de exito, o -1 si el pid no existe o la prioridad es
+// invalida (fuera del rango 0..MAXPRIO).
+// ============================================================================
+int
+setpriority(int pid, int priority)
+{
+  struct proc *p;
+
+  // Validamos el rango de la nueva prioridad.
+  if (priority < 0 || priority > MAXPRIO)
+    return -1;
+
+  for (p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if (p->pid == pid) {
+      int old = p->priority;
+      p->priority = priority;
+      release(&p->lock);
+      return old;
+    }
+    release(&p->lock);
+  }
+  return -1; // pid no encontrado
 }
 
 // Switch to scheduler.  Must hold only p->lock

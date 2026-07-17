@@ -43,3 +43,6 @@ entry("sbrk");
 entry("pause");
 entry("uptime");
 entry("sync");
+# MODIFICACION: stubs de las nuevas syscalls del proyecto.
+entry("setpriority");
+entry("freemem");
