@@ -61,6 +61,7 @@ void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
 uint64          freemem(void);        // MODIFICACION (memoria): bytes libres
+int             kalloc_batch(int, void*[]); // MODIFICACION (memoria): reserva por lotes
 
 // log.c
 void            initlog(int, struct superblock*);

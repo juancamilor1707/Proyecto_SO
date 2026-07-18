@@ -152,11 +152,15 @@ UPROGS=\
 	$U/_starvation\
 	$U/_scheduler_test\
 	$U/_memory_test\
+<<<<<<< HEAD
 	$U/_memconc\
 	$U/_memoom\
 	$U/_preempt\
 	$U/_priolim\
 	$U/_manyprio\
+=======
+	$U/_memoria_lotes\
+>>>>>>> 2e41fb4 (Cambios memoria)
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

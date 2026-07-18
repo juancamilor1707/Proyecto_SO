@@ -214,26 +214,49 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
 // Allocate PTEs and physical memory to grow a process from oldsz to
 // newsz, which need not be page aligned.  Returns new size or 0 on error.
+// MODIFICACION (memoria): uvmalloc ahora reserva las paginas en LOTES usando
+// kalloc_batch(), en vez de llamar a kalloc() una vez por cada pagina. Esto
+// reduce cuantas veces se adquiere el lock de kmem cuando se crece la
+// memoria de un proceso en varias paginas de una vez (ej. via sbrk()).
+// El tamano de lote se limita a KALLOC_BATCH_MAX para no usar un arreglo
+// gigante en la pila del kernel.
+#define KALLOC_BATCH_MAX 32
+
 uint64
 uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 {
-  char *mem;
   uint64 a;
+  void *lote[KALLOC_BATCH_MAX];
 
   if (newsz < oldsz)
     return oldsz;
 
   oldsz = PGROUNDUP(oldsz);
-  for (a = oldsz; a < newsz; a += PGSIZE) {
-    mem = kalloc();
-    if (mem == 0) {
+  a = oldsz;
+  while (a < newsz) {
+    // Cuantas paginas nos faltan para llegar a newsz (tope: el tamano del lote).
+    int faltan = (newsz - a + PGSIZE - 1) / PGSIZE;
+    int pedir = (faltan > KALLOC_BATCH_MAX) ? KALLOC_BATCH_MAX : faltan;
+
+    int conseguidas = kalloc_batch(pedir, lote);
+    if (conseguidas == 0) {
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
-    memset(mem, 0, PGSIZE);
-    if (mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_R | PTE_U | xperm) !=
-        0) {
-      kfree(mem);
+
+    for (int i = 0; i < conseguidas; i++) {
+      memset(lote[i], 0, PGSIZE);
+      if (mappages(pagetable, a, PGSIZE, (uint64)lote[i], PTE_R | PTE_U | xperm) != 0) {
+        kfree(lote[i]);
+        for (int j = i + 1; j < conseguidas; j++)
+          kfree(lote[j]);
+        uvmdealloc(pagetable, a, oldsz);
+        return 0;
+      }
+      a += PGSIZE;
+    }
+
+    if (conseguidas < pedir) {
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }

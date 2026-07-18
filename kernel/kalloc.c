@@ -108,3 +108,48 @@ freemem(void)
 
   return pages * PGSIZE;
 }
+
+// ============================================================================
+// MODIFICACION (memoria): kalloc_batch() - politica de asignacion POR LOTES.
+// ----------------------------------------------------------------------------
+// kalloc() original: para reservar N paginas hay que llamarla N veces, y
+// cada llamada hace su propio acquire()/release() del lock de kmem. Con
+// N grande (ej. sbrk de varios MB) eso es N adquisiciones de lock separadas,
+// compitiendo cada vez con otros CPUs/procesos que tambien usan kalloc/kfree.
+//
+// kalloc_batch(n, out[]) saca las n paginas de la freelist en UNA SOLA
+// seccion critica (un solo acquire/release), y llena out[] con los punteros.
+// Reduce la contencion del lock de O(n) adquisiciones a O(1) por cada
+// reserva multi-pagina. El algoritmo de fondo sigue siendo el mismo (pop de
+// una lista enlazada); lo que cambia es la GRANULARIDAD del lock.
+//
+// Devuelve la cantidad de paginas realmente conseguidas (puede ser menor a
+// n si no habia suficiente memoria libre; el llamador debe revisar el
+// valor de retorno y liberar lo obtenido con kfree() si no le alcanza).
+// ============================================================================
+int
+kalloc_batch(int n, void *out[])
+{
+  struct run *r;
+  int conseguidas = 0;
+
+  if (n <= 0)
+    return 0;
+
+  acquire(&kmem.lock);
+  while (conseguidas < n && kmem.freelist != 0) {
+    r = kmem.freelist;
+    kmem.freelist = r->next;
+    kmem.free_pages--;
+    out[conseguidas] = (void *)r;
+    conseguidas++;
+  }
+  release(&kmem.lock);
+
+  // El llenado con "junk" se hace FUERA del lock, igual que en kalloc(),
+  // porque no requiere tocar la estructura compartida kmem.
+  for (int i = 0; i < conseguidas; i++)
+    memset(out[i], 5, PGSIZE);
+
+  return conseguidas;
+}
